@@ -1,0 +1,10 @@
+checkpoints/
+media/frames_*/
+media/seed*/
+media/_check*.png
+__pycache__/
+*.pyc
+sim/runs/
+sim/data/
+*.zarr
+*.pt

@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<!-- The IndustReal 16 mm round socket on a stiff, position-driven XY stage, so that it can be moved
+     during an episode (insertion_env.py: perturbation after contact). The base is fixed; the two
+     prismatic joints are held at their targets by stiff drives, so with zero targets the socket
+     behaves as the fixed one did. The stage links have no collision shapes. -->
+<robot name="socket_stage">
+    <link name="stage_base"/>
+    <link name="stage_x">
+        <inertial>
+            <mass value="0.2"/>
+            <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+    </link>
+    <link name="socket">
+        <inertial>
+            <mass value="0.2"/>
+            <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual>
+            <geometry>
+                <mesh filename="../../IsaacGymEnvs/assets/industreal/mesh/industreal_pegs/industreal_tray_insert_round_peg_16mm.obj"/>
+            </geometry>
+        </visual>
+        <collision>
+            <geometry>
+                <mesh filename="../../IsaacGymEnvs/assets/industreal/mesh/industreal_pegs/industreal_tray_insert_round_peg_16mm.obj"/>
+            </geometry>
+            <sdf resolution="256"/>
+        </collision>
+    </link>
+    <joint name="stage_x" type="prismatic">
+        <parent link="stage_base"/>
+        <child link="stage_x"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.02" upper="0.02" effort="1000" velocity="1"/>
+    </joint>
+    <joint name="stage_y" type="prismatic">
+        <parent link="stage_x"/>
+        <child link="socket"/>
+        <axis xyz="0 1 0"/>
+        <limit lower="-0.02" upper="0.02" effort="1000" velocity="1"/>
+    </joint>
+</robot>

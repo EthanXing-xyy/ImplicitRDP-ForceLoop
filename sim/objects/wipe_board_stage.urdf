@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<!-- Built by make_wipe_board.py. The board of the wiping task on a stage that can move it in its own plane
+     (stage_x, stage_y), tip it about the middle of the line (stage_rx, stage_ry; the pivot is on the board's
+     top face) and move it along its normal (stage_normal, spring-loaded: the compliance of the tool's pad). -->
+<robot name="wipe_board_stage">
+    <link name="stage_base"/>
+    <link name="carrier_x">
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+    </link>
+    <link name="carrier_y">
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+    </link>
+    <link name="carrier_rx">
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+    </link>
+    <link name="carrier_ry">
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="1e-4" iyy="1e-4" izz="1e-4" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+    </link>
+    <link name="board">
+        <inertial>
+            <origin xyz="0 0 0.0230"/>
+            <mass value="0.3"/>
+            <inertia ixx="9.250e-05" iyy="5.650e-04" izz="6.525e-04" ixy="0" ixz="0" iyz="0"/>
+        </inertial>
+        <visual>
+            <geometry>
+                <mesh filename="wipe_board.obj"/>
+            </geometry>
+            <material name="board">
+                <color rgba="0.95 0.95 0.93 1"/>
+            </material>
+        </visual>
+        <visual>
+            <origin xyz="0 0 0.0281"/>
+            <geometry>
+                <box size="0.1 0.002 0.0004"/>
+            </geometry>
+            <material name="ink">
+                <color rgba="0.1 0.2 0.8 1"/>
+            </material>
+        </visual>
+        <collision>
+            <geometry>
+                <mesh filename="wipe_board.obj"/>
+            </geometry>
+            <sdf resolution="256"/>
+        </collision>
+    </link>
+    <joint name="stage_x" type="prismatic">
+        <parent link="stage_base"/>
+        <child link="carrier_x"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.02" upper="0.02" effort="1000" velocity="1"/>
+    </joint>
+    <joint name="stage_y" type="prismatic">
+        <parent link="carrier_x"/>
+        <child link="carrier_y"/>
+        <axis xyz="0 1 0"/>
+        <limit lower="-0.02" upper="0.02" effort="1000" velocity="1"/>
+    </joint>
+    <joint name="stage_rx" type="revolute">
+        <parent link="carrier_y"/>
+        <child link="carrier_rx"/>
+        <origin xyz="0 0 0.028"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-0.2" upper="0.2" effort="1000" velocity="10"/>
+    </joint>
+    <joint name="stage_ry" type="revolute">
+        <parent link="carrier_rx"/>
+        <child link="carrier_ry"/>
+        <axis xyz="0 1 0"/>
+        <limit lower="-0.2" upper="0.2" effort="1000" velocity="10"/>
+    </joint>
+    <joint name="stage_normal" type="prismatic">
+        <parent link="carrier_ry"/>
+        <child link="board"/>
+        <origin xyz="0 0 -0.028"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="-0.02" upper="0.02" effort="1000" velocity="1"/>
+    </joint>
+</robot>

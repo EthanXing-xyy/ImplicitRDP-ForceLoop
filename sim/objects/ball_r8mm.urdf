@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<robot name="ball">
+  <link name="ball">
+    <visual><geometry><mesh filename="ball_r8mm.obj"/></geometry></visual>
+    <collision><geometry><mesh filename="ball_r8mm.obj"/></geometry><sdf resolution="128"/></collision>
+  </link>
+</robot>

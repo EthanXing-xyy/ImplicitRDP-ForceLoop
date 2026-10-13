@@ -1,0 +1,36 @@
+Importing module 'gym_38' (/home/ethan/tacsl/IsaacGym_Preview_TacSL_Package/isaacgym/python/isaacgym/_bindings/linux-x86_64/gym_38.so)
+Setting GYM_USD_PLUG_INFO_PATH to /home/ethan/tacsl/IsaacGym_Preview_TacSL_Package/isaacgym/python/isaacgym/_bindings/linux-x86_64/usd/plugInfo.json
+PyTorch version 2.2.0+cu121
+Device count 1
+/home/ethan/tacsl/IsaacGym_Preview_TacSL_Package/isaacgym/python/isaacgym/_bindings/src/gymtorch
+Using /home/ethan/.cache/torch_extensions/py38_cu121 as PyTorch extensions root...
+Emitting ninja build file /home/ethan/.cache/torch_extensions/py38_cu121/gymtorch/build.ninja...
+Building extension module gymtorch...
+Allowing ninja to set a default number of workers... (overridable by setting the environment variable MAX_JOBS=N)
+ninja: no work to do.
+Not connected to PVD
++++ Using GPU PhysX
+Physics Engine: PhysX
+Physics Device: cuda:0
+GPU Pipeline: enabled
+Loading extension module gymtorch...
+/home/ethan/tacsl/IsaacGymEnvs/isaacgymenvs/tacsl_sensors/tacsl_sensors.py:661: UserWarning: Creating a tensor from a list of numpy.ndarrays is extremely slow. Please consider converting the list to a single numpy.ndarray with numpy.array() before converting to a tensor. (Triggered internally at ../torch/csrc/utils/tensor_new.cpp:275.)
+  indenter_mesh_local_tf = (torch.tensor([tf_quat], dtype=torch.float, device=self.device), torch.tensor([tf_pos], dtype=torch.float, device=self.device))
+wiping task: v2
+sensor timing: real
+policy implicit_rdp history 64 efference False pred_w 0.300 + fast residual now gain 0.40 mm/N clip 3.0 target 10 (latency 2, wipe v2, perturb 1.0, seed 3)  episodes 96  score 0.714 (1: 47, 0.5: 43, 0: 6)  success 47 (49.0%)  score without the force rules 0.714  line wiped: mean 85.8%, median 89.0%, 10th percentile 70.5%
+   on the board in 96 episodes; of the time on it, pressure inside 5-15 N: median 65%, above: median 13%; line passed over with too much force: mean 55.5%; time to success median 5.3 s
+   not a score of 1 because: line not wiped 49, above 15 N for more than 0.5 s in one go 0, above 40 N 0 (several can apply); longest press above the window: median 0.10 s, 90th percentile 0.18 s, max 0.23 s; tool slipped more than 2 mm in the hand in 7 episodes
+   protective stops 0, gel overloads 0 (plus 1 during the grasp, not counted); pressure peak: median 23 N, 90th percentile 28 N, max 33 N; force felt by the robot: max 30 N; peg pushed up in the hand: median 0.5 mm
+   board shaking in 96 episodes: score 0.714, wiped mean 85.8%, success 49%
+   board tipped by  0.. 5 deg:  32 episodes, wiped mean 84%, success 50%
+   board tipped by  5..10 deg:  38 episodes, wiped mean 88%, success 50%
+   board tipped by 10..15 deg:  26 episodes, wiped mean 85%, success 46%
+   height estimate off by -4..-2 mm:  21 episodes, wiped mean 85%, success 38%
+   height estimate off by -2..+0 mm:  25 episodes, wiped mean 84%, success 44%
+   height estimate off by +0..+2 mm:  25 episodes, wiped mean 89%, success 60%
+   height estimate off by +2..+4 mm:  18 episodes, wiped mean 84%, success 50%
+   fast layer: probe now vs true pressure R2 0.640 (rmse 2.59 N) on this run; residual active 20% of steps, |d| mean 1.55 mm, 90th pct 2.99 mm, clipped 10% of active steps
+   surprise ||h_t - h_{t-1}||: median 0.2562, 90th pct 2.5977
+Using SDF cache directory '/home/ethan/.isaacgym/sdf_V100'
+[Warning] [carb.gym.plugin] Acquiring DOF force tensor, but no actors have DOF force sensors enabled.

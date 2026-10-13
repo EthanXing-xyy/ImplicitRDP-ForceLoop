@@ -1,171 +1,171 @@
-**中文** | [English](README_EN.md)
+**English** | [中文](README_zh.md)
 
-# ImplicitRDP + 力环：触觉"预测"到底有没有用？一个受控的仿真实验
+# ImplicitRDP + ForceLoop: does tactile *prediction* actually help? A controlled sim study
 
-![擦板：只有策略（左）压得忽轻忽重、线没擦完；加一条法向力环（右）压力稳在 5–15 N 窗口内、线擦完](media/wipe.gif)
+![Wiping: the policy alone (left) presses erratically and leaves the line unfinished; with a normal-force loop (right) the pressure stays inside the 5–15 N window and the line gets wiped](media/wipe.gif)
 
-*同一回合（种子 8）。左：ImplicitRDP 单独跑。右：同一个策略外面套一条写死的法向力 P 环。下方是两条实时压力曲线，绿带是任务要求的 5–15 N 窗口。*
+*Same episode (seed 8). Left: ImplicitRDP on its own. Right: the same policy with a hard-coded proportional normal-force loop wrapped around it. Bottom: live pressure traces; the green band is the task's 5–15 N window.*
 
-## 一句话
+## One sentence
 
-在 Isaac Gym / TacSL 的擦板任务里（板会晃、相机估计有误差），给 ImplicitRDP 外面套一条**写死的法向力比例环**，板晃动成功率从 **70% 提到 84%**（压力从策略隐状态线性读出）或 **96%**（用仿真真实压力，相当于真机上力传感器直接给）。把环里的"当前压力"换成"预测 4 步后的压力"，**没有更好**。力读数的每帧白噪声几乎不伤（4 N 才掉 6–9 个点），**持续几步的相关误差和随压力变的偏差才伤**。
+On a board-wiping task in Isaac Gym / TacSL (the board shakes, the camera's pose estimate is noisy and late), wrapping a **hard-coded proportional normal-force loop** around ImplicitRDP raises the success rate from **70% to 84%** (pressure read linearly out of the policy's hidden state) or **96%** (true simulated pressure, i.e. what a fingertip force sensor would give on a real robot). Replacing "current pressure" in that loop by "predicted pressure 4 steps ahead" is **not better**. Per-frame white noise on the force reading barely hurts (4 N costs 6–9 points); **errors that persist for a few steps, and bias that depends on the pressure level, are what hurt**.
 
-这不是一个新方法。它是一组对照实验，回答一个文献里没有对照的问题：**触觉预测类方法的收益，来自"预测"，还是来自"有一条每步看压力的快环"？** 在这个任务上，答案是后者。
+This is not a new method. It is a set of controls answering a question the literature leaves open: **do tactile-prediction methods gain from the *prediction*, or from *having a fast loop that looks at pressure every step*?** On this task, the latter.
 
-## 问题
+## The question
 
-OmniVTA、TacPAC 这类工作把预测出来的触觉当快层的参照，报大幅提升；但消融里没有"只用实测、不预测"这一行（TacPAC 有，但它的预测版和基线差的不止预测一处）。这里把两件事拆开，各自单独测。
+OmniVTA, TacPAC and similar works feed predicted tactile signals to a fast layer as a reference and report large gains, but their ablations lack a "measured only, no prediction" row (TacPAC has one, but its predictive variant differs from that baseline in more than the prediction). Here the two ingredients are separated and tested one at a time.
 
-## 设置
+## Setup
 
 | | |
 |---|---|
-| 任务 | 擦板 v2：UR5 + Robotiq 2F-85 + GelSight Mini 仿真触觉（TacSL），工具压着板沿线擦；板在法向抖动 1–2 mm，相机对板位姿的估计有误差、有延迟。成功 = 线擦够 **且** 压力规则（5–15 N 窗口，超 15 N 不能连续 0.5 s，不能超 40 N）。脚本专家 100%。 |
-| 控制 | 24 Hz 位置命令，Isaac Gym 120 Hz 物理。 |
-| 策略 | ImplicitRDP（arXiv:2512.10946）最小复现 `sim/implicit_rdp_lite.py`：Transformer 去噪器 + GRU 快 token，慢 token 每块（32 步）一次，快 token 每步一个，每步 DDIM 5 步重去噪。**m0** = 原版；**m3** = 加 64 帧历史和一个触觉预测辅助损失（部署时不多任何输入；单独跑和 m0 一样，见下）。 |
-| 力环 | 每步：`d = clip(K · (f̂ − 10 N), ±3 mm)`，沿**估计的**板法向加到这一步的位置命令上；只在 f̂ > 2 N（接触）时生效；不累积；策略网络看不到它。 |
-| f̂ 三种来源 | **now**：线性探针从 GRU 状态 h_t 读当前压力（留出 R² 0.85）；**ahead**：同一个 h_t 读 4 步后的压力（R² 0.67，"假设压力不变"是 0.64）；**oracle**：仿真真实压力（= 真机上力传感器直接给）。 |
-| 评测 | 板晃动，评测种子 2、3 各 96 回合（探针在种子 1 的评测状态上拟合，不碰评测种子）。同种子逐回合条件相同，用配对 McNemar。 |
+| Task | Wipe v2: UR5 + Robotiq 2F-85 + simulated GelSight Mini (TacSL). A tool is pressed on a board and dragged along a line; the board shakes 1–2 mm along its normal; the camera's estimate of the board pose is noisy and delayed. Success = enough of the line wiped **and** pressure rules (5–15 N window, never above 15 N for 0.5 s, never above 40 N). A scripted expert scores 100%. |
+| Control | 24 Hz position commands, 120 Hz physics. |
+| Policy | Minimal reimplementation of ImplicitRDP (arXiv:2512.10946), `sim/implicit_rdp_lite.py`: Transformer denoiser + GRU fast token, one slow token per 32-step chunk, one fast token per step, 5 DDIM steps of re-denoising every step. **m0** = as published; **m3** = plus a 64-frame history and an auxiliary tactile-prediction loss (nothing extra at deployment; alone it performs like m0, see below). |
+| Force loop | Every step: `d = clip(K · (f̂ − 10 N), ±3 mm)` along the **estimated** board normal, added to that step's position command; active only while f̂ > 2 N (in contact); not integrated; invisible to the policy network. |
+| Three sources of f̂ | **now**: a linear probe reads the current pressure from the GRU state h_t (held-out R² 0.85); **ahead**: the same h_t, probe for the pressure 4 steps later (R² 0.67; "assume it stays" gives 0.64); **oracle**: true simulated pressure (= a fingertip force sensor on the real robot). |
+| Evaluation | Board shaking, seeds 2 and 3, 96 episodes each (the probe is fitted on seed-1 states, never on the evaluation seeds). Episode conditions are identical across variants for a given seed, so paired McNemar tests apply. |
 
-## 结果
+## Results
 
-### 1. 力环有用，收益全来自"每步看压力"，不来自"预测"
+### 1. The loop helps; all of the gain comes from "look at pressure every step", none from prediction
 
-成功率，种子 2 + 3 合并（192 回合）：
+Success, seeds 2 + 3 pooled (192 episodes):
 
-| 快层读数 | K = 0.1 mm/N | 0.2 | 0.4 |
+| Fast-layer reading | K = 0.1 mm/N | 0.2 | 0.4 |
 |---|---|---|---|
-| now（探针，当前压力） | 76.0% | **83.9%** | 50.5% |
-| ahead（探针，4 步后） | 74.5% | 77.6% | 70.8% |
-| oracle（真实，当前压力） | — | 93.2% | **96.4%** |
-| 不加（m3 单独） | 68.2% | | |
-| ImplicitRDP 原版（m0） | 69.8% | | |
+| now (probe, current pressure) | 76.0% | **83.9%** | 50.5% |
+| ahead (probe, 4 steps ahead) | 74.5% | 77.6% | 70.8% |
+| oracle (true current pressure) | — | 93.2% | **96.4%** |
+| no loop (m3 alone) | 68.2% | | |
+| ImplicitRDP as published (m0) | 69.8% | | |
 
-配对 McNemar：now 0.2 对 m3 +41 / −11，p < 0.001；对 m0 +42 / −15，p < 0.001。oracle 0.4 对 m3 +55 / −1。now 0.2 对 ahead 0.2 +25 / −13，p = 0.07（预测没有赢过实测；K = 0.4 下 ahead 反超只是因为 ahead 探针往均值缩、等于增益更小）。
+Paired McNemar: now 0.2 vs m3 +41 / −11, p < 0.001; vs m0 +42 / −15, p < 0.001. oracle 0.4 vs m3 +55 / −1. now 0.2 vs ahead 0.2 +25 / −13, p = 0.07 (prediction never beats measurement; the ahead > now at K = 0.4 is only because the ahead probe shrinks towards the mean, i.e. a smaller effective gain).
 
-机制：所有失败都是"线没擦够"，没有压力过大的。力环把接触时压力落在窗口内的时间从 73% 提到 78%（oracle 84%），带着过大压力擦过线的比例从 43% 降到 37%（oracle 27%）。残差只在 16–20% 的步上动，K = 0.2 时平均 0.6 mm，没碰到 3 mm 上限。
+Mechanism: every failure is "line not wiped enough", none is over-pressure. The loop raises the fraction of contact time spent inside the window from 73% to 78% (oracle 84%) and lowers the fraction of the line passed over with too much force from 43% to 37% (oracle 27%). The residual is active on 16–20% of steps, 0.6 mm on average at K = 0.2, never at the 3 mm clip.
 
-参考：同一任务上早先评出的 Diffusion Policy 12.5%、RDP 39.6%。
+For reference, earlier evaluations on the same task: Diffusion Policy 12.5%, RDP 39.6%.
 
-### 2. 读数质量是瓶颈：白噪声便宜，相关误差贵
+### 2. The reading is the bottleneck: white noise is cheap, correlated error is expensive
 
-真实压力加每步独立的高斯白噪声（24 Hz）：
+True pressure plus i.i.d. Gaussian noise per step (24 Hz):
 
-| 白噪声 σ | 0 N | 0.5 | 1 | 2 | 4 |
+| noise σ | 0 N | 0.5 | 1 | 2 | 4 |
 |---|---|---|---|---|---|
 | K = 0.2 | 93.2% | 91.7% | 91.7% | 89.6% | 83.9% |
 | K = 0.4 | 96.4% | 96.4% | 94.8% | 92.2% | 87.0% |
 
-![成功率对力读数白噪声](results/noise_curve.png)
+![success vs white noise on the force reading](results/noise_curve.png)
 
-探针的误差不是白噪声（只算接触步）：rmse 3.7 N，lag-1 自相关 0.59（相关时间约 2 步 = 80 ms），而且随压力系统性偏：真压 2–6 N 时高估 +1.0 N，14–20 N 时低估 −3.6 N，>20 N 低估 −8 N（往均值缩）。对照曲线：探针 K = 0.2 的 83.9% 正好等于 4 N 白噪声；探针 K = 0.4 的 50.5% 远低于 4 N 白噪声的 87%。相关了几步的抖动在高增益下被当成真信号追，白噪声则在机器人响应时间内被平均掉。
+The probe's error is not white (contact steps only): rmse 3.7 N, lag-1 autocorrelation 0.59 (correlation time ≈ 2 steps = 80 ms), and biased by pressure level: +1.0 N when the true pressure is 2–6 N, −3.6 N at 14–20 N, −8 N above 20 N (regression to the mean). Against the curve: the probe at K = 0.2 (83.9%) matches 4 N of white noise; the probe at K = 0.4 (50.5%) is far below 4 N of white noise (87%). Jitter that persists for a few steps is chased as if it were signal at high gain; white noise averages out within the robot's response time.
 
-### 3. 给触觉指尖力读数的三条指标（力调节类任务）
+### 3. Three accuracy requirements for a tactile fingertip's force reading (force-regulation tasks)
 
-1. **每帧抖动便宜**：σ ≤ 1 N 几乎免费，≤ 2 N 代价不到 4 个点，不必为它重滤波或降帧率。
-2. **持续 ≥ 2 个控制步（≥ 80 ms）的误差和随压力变化的偏差才贵**：它决定能用的增益上限（K 0.2 和 0.4 差 10 个点）。
-3. **量程要线性到窗口上沿以上（≥ 20 N）**：探针在 14–20 N 低估 3.6 N，正是环最该抬起的时候。
+1. **Per-frame jitter is cheap**: σ ≤ 1 N is essentially free, ≤ 2 N costs under 4 points; no need for heavy filtering or a lower rate.
+2. **Errors lasting ≥ 2 control steps (≥ 80 ms) and pressure-dependent bias are expensive**: they set the usable gain (K 0.2 vs 0.4 is a 10-point difference).
+3. **Linear range up to and beyond the window's upper edge (≥ 20 N)**: the probe under-reads by 3.6 N at 14–20 N, exactly where the loop must lift.
 
-### 顺便：触觉预测当辅助损失，在这里也没用
+### Also: tactile prediction as an auxiliary loss did nothing here
 
-m3（历史 64 帧 + 预测损失）单独跑和 m0 没有差别（三种子 288 回合：67.4% 对 72.2%，Fisher p = 0.24）。GRU 状态读得出当前压力（R² 0.85），几乎读不出未来（0.67，对 0.64 的"假设不变"）。把"已发出的命令"也喂进快环的版本在行为克隆下被抄成捷径，闭环 3.1%，不在本仓库里展开。
+m3 (64-frame history + prediction loss) alone is indistinguishable from m0 (three seeds, 288 episodes: 67.4% vs 72.2%, Fisher p = 0.24). The GRU state carries the current pressure (R² 0.85) but almost no future (0.67 vs 0.64 for "assume it stays"). A variant that also fed the just-issued command (efference copy) into the fast loop was copied as a shortcut under behaviour cloning and collapsed to 3.1% closed-loop; it is not expanded on in this repo.
 
-## 诚实的边界
+## Honest limits
 
-- 仿真，一个任务。擦板的失败只有"压力出窗"一种，一个标量 P 环就够；需要接触几何的任务（插孔、理线）不一定如此。
-- 预测器弱：ahead 探针只比"假设不变"强一点，又不看策略的计划，等于 now 加噪声。要公平检验"预测"，需要看得见计划的预测器（比如 f̂(t+4) = 当前压力 + 刚度 × 接下来 4 步计划的法向位移）。本仓库没做。
-- 力环本身是力位混合控制的常识，这里的贡献是对照，不是方法。
+- Simulation, one task. Wiping fails in exactly one way (pressure out of the window), so a scalar P loop suffices; tasks that need contact geometry (insertion, cable routing) may not behave the same.
+- The predictor is weak: the ahead probe is barely better than "assume it stays" and does not see the policy's plan, so it amounts to "now plus noise". A fair test of *prediction* needs a plan-aware predictor (e.g. f̂(t+4) = current pressure + stiffness × planned normal displacement over the next 4 steps). Not done here.
+- The force loop itself is textbook hybrid force/position control. The contribution is the controls, not the method.
 
-## 复现
+## Reproduce
 
-### 依赖
+### Dependencies
 
-- NVIDIA **Isaac Gym Preview 4** 和 **TacSL 版 IsaacGymEnvs**（`isaacgymenvs.tacsl_sensors`，IndustReal 的 peg 资产）。NVIDIA 许可，自行从 NVIDIA 获取，不随本仓库分发。
-- **reactive_diffusion_policy**（MIT，[xiaoxiaoxh/reactive_diffusion_policy](https://github.com/xiaoxiaoxh/reactive_diffusion_policy)）：只用它的 `ConditionalUnet1D`。
-- Python 3.8，PyTorch（Isaac Gym 要求的版本），`urdfpy`、`scipy`、`zarr`、`numpy`、`matplotlib`、`opencv-python`、`imageio`。
-- 一张 6 GB 显存的卡够评测（1.3 GB）和训练（3.8 GB）。
+- NVIDIA **Isaac Gym Preview 4** and the **TacSL branch of IsaacGymEnvs** (`isaacgymenvs.tacsl_sensors`, the IndustReal peg asset). NVIDIA-licensed; obtain from NVIDIA, not redistributed here.
+- **reactive_diffusion_policy** (MIT, [xiaoxiaoxh/reactive_diffusion_policy](https://github.com/xiaoxiaoxh/reactive_diffusion_policy)): only its `ConditionalUnet1D` is used.
+- Python 3.8, PyTorch (the version Isaac Gym needs), `urdfpy`, `scipy`, `zarr`, `numpy`, `matplotlib`, `opencv-python`, `imageio`.
+- A 6 GB GPU is enough for evaluation (1.3 GB) and training (3.8 GB).
 
-目录约定（可用环境变量 `TACSL_ROOT` 改，默认 `~/tacsl`）：
-
-```
-$TACSL_ROOT/IsaacGymEnvs/        TacSL 版 IsaacGymEnvs（pip install -e）
-$TACSL_ROOT/rdp/src/             reactive_diffusion_policy 的克隆
-```
-
-### checkpoint
-
-从本仓库的 [Release](../../releases) 下载，放到 `checkpoints/`：
+Directory convention (override with `TACSL_ROOT`, default `~/tacsl`):
 
 ```
-checkpoints/wipe_irdp_v2/policy.pt     m0：ImplicitRDP 原版（擦板 v2，48000 步）
-checkpoints/wipe_m3/policy.pt          m3：历史 64 + 预测损失 λ=0.3
-checkpoints/wipe_irdp_v2/force_calib.pt   训 m3 时预测头用的力标定（评测不需要）
+$TACSL_ROOT/IsaacGymEnvs/        TacSL branch of IsaacGymEnvs (pip install -e)
+$TACSL_ROOT/rdp/src/             clone of reactive_diffusion_policy
 ```
 
-### 跑
+### Checkpoints
+
+Download from this repo's [Releases](../../releases) into `checkpoints/`:
+
+```
+checkpoints/wipe_irdp_v2/policy.pt        m0: ImplicitRDP as published (wipe v2, 48000 steps)
+checkpoints/wipe_m3/policy.pt             m3: 64-frame history + prediction loss λ=0.3
+checkpoints/wipe_irdp_v2/force_calib.pt   force calibration used by m3's prediction head at training time (not needed for evaluation)
+```
+
+### Run
 
 ```bash
 conda activate tacsl
 export TACSL_ROOT=~/tacsl
 cd sim
 
-# ImplicitRDP 单独（种子 2，96 回合，板晃动）
+# ImplicitRDP alone (seed 2, 96 episodes, board shaking)
 WIPE_TASK=v2 python eval_irdp_wipe.py --ckpt ../checkpoints/wipe_irdp_v2/policy.pt --perturb 1 --episodes 96 --seed 2 --no-h \
     --stats ../results/l1/wipe_m0_p1_s2.npz
 
-# + 力环，真实压力，K = 0.4
+# + force loop, true pressure, K = 0.4
 WIPE_TASK=v2 python eval_irdp_wipe_fast.py --ckpt ../checkpoints/wipe_m3/policy.pt --perturb 1 --episodes 96 --seed 2 --no-h \
     --residual oracle --gain 0.4 --stats ../results/l1/wipe_m3_fast_oracle_g0.4_s2.npz
 
-# 探针（要先在种子 1 上评一遍 m3、不加 --no-h，得到 wipe_m3_p1_h.npy）
+# the probe (first evaluate m3 on seed 1 without --no-h to get wipe_m3_p1_h.npy)
 WIPE_TASK=v2 python eval_irdp_wipe.py --ckpt ../checkpoints/wipe_m3/policy.pt --perturb 1 --episodes 96 --seed 1 --stats ../results/l1/wipe_m3_p1.npz
 python fit_force_probe.py ../results/l1/wipe_m3_p1 ../results/probe_m3_force.npz
 
-# 整个网格（now / ahead × K，oracle，噪声曲线），每条 96 回合约 8 分钟
+# the whole grid (now / ahead × K, oracle, noise curve); ~8 min per 96-episode run
 bash ../scripts/run_fast_layer.sh
 GAINS="0.4" ORACLE_GAINS="0.2 0.4" bash ../scripts/run_fast_layer.sh
 NOISE_N="0.5 1 2 4" bash ../scripts/run_fast_layer.sh
 
-# 分析
+# analysis
 python mcnemar_fast.py ../results/l1
 python noise_curve.py ../results/l1 ../results/noise_curve.png
 python probe_error.py ../results/l1
 
-# 录像（一个进程一段，Isaac Gym 一个进程只能开一个仿真）
+# video (one process per run: Isaac Gym allows one sim per process)
 WIPE_TASK=v2 python record_video.py record --label irdp --ckpt ../checkpoints/wipe_irdp_v2/policy.pt --residual none --seed 8 --out ../media/seed8/frames_irdp
 WIPE_TASK=v2 python record_video.py record --label loop --ckpt ../checkpoints/wipe_m3/policy.pt --residual oracle --gain 0.4 --seed 8 --out ../media/seed8/frames_loop
 python record_video.py compose --left ../media/seed8/frames_irdp --right ../media/seed8/frames_loop --out ../media/wipe
 ```
 
-`results/l1/` 里是本文所有数字对应的 96 回合统计（`.npz` 逐回合，`.txt` 汇总）。
+`results/l1/` holds the 96-episode statistics behind every number above (`.npz` per episode, `.txt` summaries).
 
-### 从头训（可选）
+### Training from scratch (optional)
 
-示教：`WIPE_TASK=v2 python wipe_expert.py --mode expert --episodes 960 --demos 480 --seed 0 --perturb 1 --record data/wipe_demos_v2.zarr`（脚本专家，板晃动，只留成功回合）。先用 `rdp_lite.py` 训一个基础 checkpoint（触觉 PCA + DP），再用 `implicit_rdp_lite.py --task wipe --base <基础> --calib <force_calib.pt>` 训 ImplicitRDP；参数见两个文件开头的 docstring。48000 步在 RTX 3060 上约 3.3 小时。
+Demos: `WIPE_TASK=v2 python wipe_expert.py --mode expert --episodes 960 --demos 480 --seed 0 --perturb 1 --record data/wipe_demos_v2.zarr` (scripted expert, board shaking, successful episodes only). Train a base checkpoint with `rdp_lite.py` (tactile PCA + DP), then ImplicitRDP with `implicit_rdp_lite.py --task wipe --base <base> --calib <force_calib.pt>`; flags are documented in the docstrings at the top of both files. 48000 steps take about 3.3 h on an RTX 3060.
 
-## 仓库结构
+## Layout
 
 ```
-sim/                      仿真、专家、策略、评测、分析（都是本项目自己写的；资产见 THIRD_PARTY.md）
-  insertion_env.py        基础环境：UR5 + 2F-85 + GelSight Mini（TacSL 触觉）
-  wipe_env.py             擦板任务：晃动的板、相机估计误差、成功与压力规则
-  wipe_expert.py          脚本专家（积分型力环）、回合统计与汇总
-  rdp_lite.py             RDP 最小复现（触觉 PCA、DP、快慢两层）
-  implicit_rdp_lite.py    ImplicitRDP 最小复现 + 历史 / 预测头改动
-  eval_irdp_wipe.py       评测（可存每步 GRU 状态给探针用）
-  eval_irdp_wipe_fast.py  评测 + 力环（now / ahead / oracle，噪声）
+sim/                      simulation, expert, policies, evaluation, analysis (all written for this project; assets: see THIRD_PARTY.md)
+  insertion_env.py        base environment: UR5 + 2F-85 + GelSight Mini (TacSL tactile)
+  wipe_env.py             wiping task: shaking board, camera-estimate errors, success and pressure rules
+  wipe_expert.py          scripted expert (integral force loop), episode statistics and summaries
+  rdp_lite.py             minimal RDP (tactile PCA, DP, slow/fast layers)
+  implicit_rdp_lite.py    minimal ImplicitRDP + history / prediction-head changes
+  eval_irdp_wipe.py       evaluation (optionally stores the GRU state every step for the probe)
+  eval_irdp_wipe_fast.py  evaluation + force loop (now / ahead / oracle, noise)
   fit_force_probe.py  mcnemar_fast.py  noise_curve.py  probe_error.py  record_video.py
-  ur5_2f85_isaacgym/  objects/   机器人与板的 URDF / 网格
-scripts/run_fast_layer.sh 整个网格的流水线
-results/                  所有评测统计、探针权重、噪声曲线
+  ur5_2f85_isaacgym/  objects/   robot and board URDFs / meshes
+scripts/run_fast_layer.sh pipeline for the whole grid
+results/                  all evaluation statistics, probe weights, noise curve
 media/                    GIF / mp4
 ```
 
-## 来源与致谢
+## Sources and acknowledgements
 
-- ImplicitRDP：Chen et al., *ImplicitRDP: An End-to-End Visual-Force Diffusion Policy with Structural Slow-Fast Learning*, arXiv:2512.10946, 2025。本仓库是按论文的最小复现，不是官方代码。
-- RDP：Xue et al., *Reactive Diffusion Policy*, RSS 2025。`ConditionalUnet1D` 来自其官方实现（MIT）。
-- TacSL / IndustReal：Akinola, Xu et al., NVIDIA（IsaacGymEnvs，BSD-3）。
-- 机器人资产：UR5（ROS-Industrial，BSD-3）、Robotiq 2F-85（ElectronicElephant 的 pybullet_ur5_robotiq，BSD）、GelSight Mini 网格。详见 `THIRD_PARTY.md`。
+- ImplicitRDP: Chen et al., *ImplicitRDP: An End-to-End Visual-Force Diffusion Policy with Structural Slow-Fast Learning*, arXiv:2512.10946, 2025. This repo is a minimal reimplementation from the paper, not the official code.
+- RDP: Xue et al., *Reactive Diffusion Policy*, RSS 2025. `ConditionalUnet1D` comes from the official implementation (MIT).
+- TacSL / IndustReal: Akinola, Xu et al., NVIDIA (IsaacGymEnvs, BSD-3).
+- Robot assets: UR5 (ROS-Industrial, BSD-3), Robotiq 2F-85 (ElectronicElephant's pybullet_ur5_robotiq, BSD), GelSight Mini mesh. See `THIRD_PARTY.md`.
 
-代码在 MIT 许可下。实验在 2026 年 10 月完成于个人设备，与任何机构无关。
+Code under the MIT license. Experiments done in October 2026 on personal hardware, unaffiliated with any institution.
